@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -22,6 +25,25 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".AddSessionActivity"
+            android:exported="false" />
+        <activity
+            android:name=".SessionDetailsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".AddSeriesActivity"
+            android:exported="false" />
+        <activity
+            android:name=".CameraActivity"
+            android:exported="false" />
+        <activity
+            android:name=".SeriesDetailsActivity"
+            android:exported="false" />
+
+        <activity android:name=".ShotsActivity" android:exported="false"/>
+        <activity android:name=".AddShotActivity" android:exported="false"/>
+
     </application>
 
 </manifest>
