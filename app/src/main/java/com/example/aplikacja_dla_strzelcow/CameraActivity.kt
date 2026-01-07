@@ -8,7 +8,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.media.ExifInterface
+import androidx.exifinterface.media.ExifInterface
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,6 +32,8 @@ import java.io.File
 import com.example.aplikacja_dla_strzelcow.cv.TargetDetector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
+import com.example.aplikacja_dla_strzelcow.cv.TargetDetectionResult
+import com.example.aplikacja_dla_strzelcow.cv.drawTargetOverlay
 
 class CameraActivity : ComponentActivity() {
 
@@ -47,40 +49,82 @@ class CameraActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
+            var analyzedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+            var detectionResult by remember { mutableStateOf<TargetDetectionResult?>(null) }
             var photoFile by remember { mutableStateOf<File?>(null) }
             var isAnalyzing by remember { mutableStateOf(false) }
             CameraScreen(
                 photoFile = photoFile,
+                analyzedBitmap = analyzedBitmap,
+                isAnalyzing = isAnalyzing,
                 onTakePhoto = {
                     takePhoto { file ->
                         photoFile = file
+                        //analyzedBitmap = null
+                        //detectionResult = null
                     }
                 },
                 onRetry = {
 
                     photoFile = null
+                    //analyzedBitmap = null
+                    //detectionResult = null
                 },
                 onAccept = {
                     isAnalyzing = true
 
-                    val bitmap = loadBitmapWithRotation(photoFile!!)
-                    val result = TargetDetector.detect(bitmap)
+                    val originalBitmap = loadBitmapWithRotation(photoFile!!)
+                    val result = TargetDetector.detect(originalBitmap)
 
                     if (result == null) {
                         isAnalyzing = false
-                        // TODO: pokaż dialog "Nie wykryto tarczy"
                         return@CameraScreen
                     }
 
+                    // 🔴 RYSUJEMY OVERLAY
+                    val overlayBitmap = drawTargetOverlay(
+                        originalBitmap,
+                        result.centerX,
+                        result.centerY,
+                        result.radius
+                    )
+
+                    val overlayFile = File(
+                        externalCacheDir,
+                        "photo_overlay_${System.currentTimeMillis()}.jpg"
+                    )
+
+                    saveBitmapToFile(overlayBitmap, overlayFile)
+
+                    // 🔴 ZWRACAMY ŚCIEŻKĘ DO AddSeriesActivity
                     val intent = Intent().apply {
-                        putExtra("photoPath", photoFile!!.absolutePath)
+                        // Zwracamy ścieżkę do pliku z nałożoną otoczką DO WYŚWIETLENIA
+                        putExtra("overlayPhotoPath", overlayFile.absolutePath)
+                        // Zwracamy ścieżkę do oryginalnego pliku DO WYSŁANIA
+                        putExtra("originalPhotoPath", photoFile!!.absolutePath)
                         putExtra("cx", result.centerX)
                         putExtra("cy", result.centerY)
                         putExtra("radius", result.radius)
                     }
+//                    val intent = Intent().apply {
+//                        // ZMIANA: Zwracamy ścieżkę do pliku z nałożoną otoczką
+//                        putExtra("photoPath", overlayFile.absolutePath)
+//                        putExtra("cx", result.centerX)
+//                        putExtra("cy", result.centerY)
+//                        putExtra("radius", result.radius)
+//                    }
 
                     setResult(Activity.RESULT_OK, intent)
                     finish()
+//                    val intent = Intent().apply {
+//                        putExtra("photoPath", photoFile!!.absolutePath)
+//                        putExtra("cx", result.centerX)
+//                        putExtra("cy", result.centerY)
+//                        putExtra("radius", result.radius)
+//                    }
+//
+//                    setResult(Activity.RESULT_OK, intent)
+//                    finish()
                 },
                 onPreviewReady = { previewView ->
                     startCamera(previewView)
@@ -142,6 +186,7 @@ class CameraActivity : ComponentActivity() {
 @Composable
 fun CameraScreen(
     photoFile: File?,
+    analyzedBitmap: Bitmap?,
     isAnalyzing: Boolean,
     onTakePhoto: () -> Unit,
     onRetry: () -> Unit,
@@ -174,6 +219,9 @@ fun CameraScreen(
             val bitmap = remember(photoFile) {
                 loadBitmapWithRotation(photoFile)
             }
+//            val bitmap = remember(photoFile) {
+//                loadBitmapWithRotation(photoFile)
+//            }
             if (isAnalyzing) {
                 Box(
                     modifier = Modifier
@@ -227,6 +275,12 @@ fun loadBitmapWithRotation(file: File): Bitmap {
 
     val matrix = Matrix().apply { postRotate(rotation) }
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
+
+fun saveBitmapToFile(bitmap: Bitmap, file: File) {
+    file.outputStream().use { out ->
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+    }
 }
 //class CameraActivity : ComponentActivity() {
 //

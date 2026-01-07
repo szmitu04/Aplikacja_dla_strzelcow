@@ -1,11 +1,14 @@
 package com.example.aplikacja_dla_strzelcow.cv
 
 
+
 import android.graphics.Bitmap
+import org.opencv.android.OpenCVLoader // 👈 WAŻNE: Dodaj ten import
 import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.max
+
 
 data class TargetDetectionResult(
     val centerX: Float,
@@ -14,7 +17,11 @@ data class TargetDetectionResult(
 )
 
 object TargetDetector {
-
+    init {
+        // Ta linia ładuje natywną bibliotekę OpenCV.
+        // Musi zostać wykonana raz, zanim użyjemy jakiejkolwiek funkcji OpenCV.
+        OpenCVLoader.initDebug()
+    }
     fun detect(bitmap: Bitmap): TargetDetectionResult? {
         val src = Mat()
         Utils.bitmapToMat(bitmap, src)
@@ -52,7 +59,7 @@ object TargetDetector {
 
         val w = src.width().toFloat()
         val h = src.height().toFloat()
-        val norm = max(w, h)
+        val norm = kotlin.math.min(w, h)
 
         return TargetDetectionResult(
             centerX = (center.x / w).toFloat(),

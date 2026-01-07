@@ -32,11 +32,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -70,13 +70,14 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.5.2")
     implementation("androidx.camera:camera-view:1.5.2")
     implementation("androidx.camera:camera-core:1.5.2")
-    implementation("com.google.guava:guava:31.1-android")
+    implementation("com.google.guava:guava:33.5.0-android")
 
     // --- Coil (obrazy z URL – Firebase Storage) ---
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     //OpenCv
     implementation(project(":opencv"))
+    implementation(libs.androidx.exifinterface)
 }
 
 //dependencies {

@@ -20,6 +20,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.clickable
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import coil.compose.AsyncImage
 import java.io.File
 class AddSeriesActivity : ComponentActivity() {
@@ -40,15 +42,21 @@ class AddSeriesActivity : ComponentActivity() {
                 var distance by remember { mutableStateOf("") }
                 var notes by remember { mutableStateOf("") }
                 var photoFile by remember { mutableStateOf<File?>(null) }
+                var overlayPhotoFile by remember { mutableStateOf<File?>(null) }
+                var originalPhotoFile by remember { mutableStateOf<File?>(null) }
+
                 val cameraLauncher =
                     rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
                     ) { result ->
                         if (result.resultCode == RESULT_OK) {
-                            val path =
-                                result.data?.getStringExtra("photoPath")
-                            if (path != null) {
-                                photoFile = File(path)
+                            val overlayPath = result.data?.getStringExtra("overlayPhotoPath")
+                            if (overlayPath != null) {
+                                overlayPhotoFile = File(overlayPath)
+                            }
+                            val originalPath = result.data?.getStringExtra("originalPhotoPath")
+                            if (originalPath != null) {
+                                originalPhotoFile = File(originalPath)
                             }
                         }
                     }
@@ -64,7 +72,7 @@ class AddSeriesActivity : ComponentActivity() {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    if (photoFile == null) {
+                    if (overlayPhotoFile == null) {
                         Icon(
                             imageVector = Icons.Filled.CameraAlt,
                             contentDescription = "Aparat",
@@ -78,10 +86,9 @@ class AddSeriesActivity : ComponentActivity() {
                         )
                     } else {
                         AsyncImage(
-                            model = photoFile,
+                            model = overlayPhotoFile, // Wyświetlamy zdjęcie z otoczką
                             contentDescription = "Zdjęcie tarczy",
-                            modifier = Modifier
-                                .size(200.dp)
+                            modifier = Modifier.size(200.dp)
                         )
                     }
 
@@ -126,7 +133,8 @@ class AddSeriesActivity : ComponentActivity() {
                                 distance.toIntOrNull() ?: 0
                             ) { seriesId ->
 
-                                photoFile?.let { file ->
+                                // Używamy oryginalnego pliku do wysłania
+                                originalPhotoFile?.let { file ->
                                     repository.uploadSeriesImage(
                                         sessionId,
                                         seriesId,
