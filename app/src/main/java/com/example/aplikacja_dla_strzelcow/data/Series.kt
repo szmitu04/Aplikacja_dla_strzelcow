@@ -8,7 +8,13 @@ data class Series(
     val weapon: String = "",
     val ammo: String = "",
     val distance: Int = 0,
+    val notes: String = "",
     val createdAt: Timestamp? = null,
     val imageUrl: String? = null,
-    val target: Map<String, Float>? = null
+    val targetParams: TargetParams? = null
+)
+data class TargetParams(
+    val centerX: Float = 0f,
+    val centerY: Float = 0f,
+    val radius: Float = 0f
 )

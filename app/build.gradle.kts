@@ -78,6 +78,8 @@ dependencies {
     //OpenCv
     implementation(project(":opencv"))
     implementation(libs.androidx.exifinterface)
+
+    implementation("com.google.code.gson:gson:2.13.2")
 }
 
 //dependencies {

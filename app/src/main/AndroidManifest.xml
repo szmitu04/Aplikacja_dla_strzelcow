@@ -41,8 +41,8 @@
             android:name=".SeriesDetailsActivity"
             android:exported="false" />
 
-        <activity android:name=".ShotsActivity" android:exported="false"/>
-        <activity android:name=".AddShotActivity" android:exported="false"/>
+<!--        <activity android:name=".ShotsActivity" android:exported="false"/>-->
+<!--        <activity android:name=".AddShotActivity" android:exported="false"/>-->
 
     </application>
 

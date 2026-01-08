@@ -32,8 +32,12 @@ import java.io.File
 import com.example.aplikacja_dla_strzelcow.cv.TargetDetector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
-import com.example.aplikacja_dla_strzelcow.cv.TargetDetectionResult
+import com.example.aplikacja_dla_strzelcow.cv.ShotDetector
+//import com.example.aplikacja_dla_strzelcow.cv.TargetDetectionResult
 import com.example.aplikacja_dla_strzelcow.cv.drawTargetOverlay
+import com.example.aplikacja_dla_strzelcow.data.Shot
+import com.example.aplikacja_dla_strzelcow.data.TargetParams
+import com.google.gson.Gson
 
 class CameraActivity : ComponentActivity() {
 
@@ -50,7 +54,7 @@ class CameraActivity : ComponentActivity() {
 
         setContent {
             var analyzedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-            var detectionResult by remember { mutableStateOf<TargetDetectionResult?>(null) }
+            var detectionResult by remember { mutableStateOf<TargetParams?>(null) }
             var photoFile by remember { mutableStateOf<File?>(null) }
             var isAnalyzing by remember { mutableStateOf(false) }
             CameraScreen(
@@ -74,20 +78,26 @@ class CameraActivity : ComponentActivity() {
                     isAnalyzing = true
 
                     val originalBitmap = loadBitmapWithRotation(photoFile!!)
-                    val result = TargetDetector.detect(originalBitmap)
+                    val targetResult = TargetDetector.detect(originalBitmap)
 
-                    if (result == null) {
+                    if (targetResult == null) {
                         isAnalyzing = false
                         return@CameraScreen
                     }
-
-                    // 🔴 RYSUJEMY OVERLAY
+                    val detectedShots = ShotDetector.detect(originalBitmap, targetResult)
+                    // 2. Rysujemy otoczkę tarczy ORAZ ramki wokół strzałów
                     val overlayBitmap = drawTargetOverlay(
                         originalBitmap,
-                        result.centerX,
-                        result.centerY,
-                        result.radius
+                        targetResult, // Przekazujemy cały obiekt
+                        detectedShots // Przekazujemy listę strzałów
                     )
+
+//                    val overlayBitmap = drawTargetOverlay(
+//                        originalBitmap,
+//                        result.centerX,
+//                        result.centerY,
+//                        result.radius
+//                    )
 
                     val overlayFile = File(
                         externalCacheDir,
@@ -95,16 +105,20 @@ class CameraActivity : ComponentActivity() {
                     )
 
                     saveBitmapToFile(overlayBitmap, overlayFile)
-
-                    // 🔴 ZWRACAMY ŚCIEŻKĘ DO AddSeriesActivity
+                    // 3. Przekazujemy wszystkie dane do AddSeriesActivity
                     val intent = Intent().apply {
-                        // Zwracamy ścieżkę do pliku z nałożoną otoczką DO WYŚWIETLENIA
                         putExtra("overlayPhotoPath", overlayFile.absolutePath)
-                        // Zwracamy ścieżkę do oryginalnego pliku DO WYSŁANIA
                         putExtra("originalPhotoPath", photoFile!!.absolutePath)
-                        putExtra("cx", result.centerX)
-                        putExtra("cy", result.centerY)
-                        putExtra("radius", result.radius)
+
+                        // Przekazujemy parametry tarczy
+                        putExtra("cx", targetResult.centerX)
+                        putExtra("cy", targetResult.centerY)
+                        putExtra("radius", targetResult.radius)
+
+                        // 🔴 NOWOŚĆ: Serializujemy listę strzałów do formatu JSON i przesyłamy 🔴
+                        val gson = Gson()
+                        val shotsJson = gson.toJson(detectedShots)
+                        putExtra("shotsJson", shotsJson)
                     }
 //                    val intent = Intent().apply {
 //                        // ZMIANA: Zwracamy ścieżkę do pliku z nałożoną otoczką

@@ -46,12 +46,39 @@ class FirestoreRepository {
             .collection("sessions")
             .add(session)
     }
+    fun createSeriesWithShots(
+        sessionId: String,
+        series: Series, // Przekazujemy cały obiekt serii
+        shots: List<Shot>, // Przekazujemy listę strzałów
+        onCreated: (String) -> Unit
+    ) {
+        val userId = uid() ?: return
 
+        // 1. Zapisujemy dokument serii
+        db.collection("users").document(userId)
+            .collection("sessions").document(sessionId)
+            .collection("series")
+            .add(series) // Firestore ignoruje pole `id` przy zapisie
+            .addOnSuccessListener { seriesDocRef ->
+                val seriesId = seriesDocRef.id
+                onCreated(seriesId) // Zwracamy ID utworzonej serii
+
+                // 2. W pętli zapisujemy wszystkie strzały do podkolekcji
+                val batch = db.batch()
+                shots.forEach { shot ->
+                    val shotDocRef = seriesDocRef.collection("shots").document()
+                    batch.set(shotDocRef, shot)
+                }
+                batch.commit() // Wykonujemy wszystkie operacje zapisu strzałów naraz
+            }
+    }
     fun createSeries(
         sessionId: String,
         weapon: String,
         ammo: String,
         distance: Int,
+        notes: String,
+        targetParams: TargetParams?,
         onCreated: (String) -> Unit
     ) {
         val userId = uid() ?: return
@@ -60,7 +87,11 @@ class FirestoreRepository {
             "weapon" to weapon,
             "ammo" to ammo,
             "distance" to distance,
-            "createdAt" to Timestamp.now()
+            "notes" to notes,
+            "createdAt" to Timestamp.now(),
+            // Jeśli targetParams nie jest null, dodajemy go do mapy.
+            // Firestore automatycznie przekonwertuje obiekt `TargetParams` na mapę.
+            "targetParams" to targetParams
         )
 
         db.collection("users")
@@ -137,12 +168,25 @@ class FirestoreRepository {
             .get()
             .addOnSuccessListener { result ->
                 val series = result.documents.map { doc ->
+                    val targetParamsMap = doc.get("targetParams") as? Map<*, *>
+                    val targetParams = if (targetParamsMap != null) {
+                        TargetParams(
+                            centerX = (targetParamsMap["centerX"] as? Double)?.toFloat() ?: 0f,
+                            centerY = (targetParamsMap["centerY"] as? Double)?.toFloat() ?: 0f,
+                            radius = (targetParamsMap["radius"] as? Double)?.toFloat() ?: 0f
+                        )
+                    } else {
+                        null
+                    }
                     Series(
                         id = doc.id,
                         weapon = doc.getString("weapon") ?: "",
                         ammo = doc.getString("ammo") ?: "",
                         distance = (doc.getLong("distance") ?: 0L).toInt(),
-                        createdAt = doc.getTimestamp("createdAt")
+                        notes = doc.getString("notes") ?: "", // Odczytujemy opis
+                        createdAt = doc.getTimestamp("createdAt"),
+                        imageUrl = doc.getString("imageUrl"),
+                        targetParams = targetParams
                     )
                 }
                 onResult(series)
