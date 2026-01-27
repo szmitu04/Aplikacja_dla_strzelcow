@@ -13,64 +13,118 @@ import com.example.aplikacja_dla_strzelcow.data.FirestoreRepository
 import com.example.aplikacja_dla_strzelcow.data.Session
 import com.example.aplikacja_dla_strzelcow.ui.*
 import com.example.aplikacja_dla_strzelcow.ui.theme.Aplikacja_dla_strzelcowTheme
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-
+//import com.google.android.gms.auth.api.signin.GoogleSignIn
+//import androidx.credentials.GetCredentialException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import android.util.Log
 class MainActivity : ComponentActivity() {
 
     private lateinit var authManager: AuthManager
     private val repository = FirestoreRepository()
 
+    // Ta zmienna będzie teraz jedynym źródłem prawdy o sesjach
+    private var sessionsState by mutableStateOf<List<Session>>(emptyList())
     private var userEmail by mutableStateOf<String?>(null)
     private var isLoading by mutableStateOf(false)
-    private var sessions by mutableStateOf<List<Session>>(emptyList())
+    //private var sessions by mutableStateOf<List<Session>>(emptyList())
 
-    private val launcher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
+//    private val launcher = registerForActivityResult(
+//        ActivityResultContracts.StartActivityForResult()
+//    ) { result ->
+//
+//        if (result.resultCode != RESULT_OK || result.data == null) {
+//            isLoading = false
+//            return@registerForActivityResult
+//        }
+//
+//        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+//
+//        try {
+//            val account = task.getResult(Exception::class.java)
+//            val idToken = account.idToken ?: return@registerForActivityResult
+//
+//            authManager.firebaseAuthWithGoogle(
+//                idToken = idToken,
+//                onSuccess = {
+//                    val user = authManager.auth.currentUser
+//                    userEmail = user?.email
+//                    isLoading = false
+//
+//                    repository.saveUser(
+//                        email = user?.email,
+//                        name = user?.displayName
+//                    )
+//
+//                    repository.getSessions {
+//                        sessions = it
+//                    }
+//                },
+//                onError = {
+//                    isLoading = false
+//                }
+//            )
+//
+//        } catch (_: Exception) {
+//            isLoading = false
+//        }
+//    }
+private fun doSignIn() {
+    // Ustawiamy stan ładowania
+    isLoading = true
 
-        if (result.resultCode != RESULT_OK || result.data == null) {
-            isLoading = false
-            return@registerForActivityResult
-        }
-
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-
+    // Uruchamiamy korutynę, aby wywołać funkcję suspend
+    lifecycleScope.launch {
         try {
-            val account = task.getResult(Exception::class.java)
-            val idToken = account.idToken ?: return@registerForActivityResult
+            // 1. Wywołaj nowy proces logowania
+            Log.d("SignInDebug", "Krok 1: Rozpoczynanie signIn w AuthManager.")
+            val result = authManager.signIn(this@MainActivity)
+            Log.d("SignInDebug", "Krok 2: Otrzymano odpowiedź z Credential Manager. Próba logowania do Firebase.")
 
+
+            // 2. Po sukcesie, zaloguj do Firebase
             authManager.firebaseAuthWithGoogle(
-                idToken = idToken,
+                response = result,
                 onSuccess = {
+                    Log.d("SignInDebug", "Krok 3: SUKCES! Zalogowano do Firebase.")
                     val user = authManager.auth.currentUser
                     userEmail = user?.email
                     isLoading = false
 
                     repository.saveUser(
+
                         email = user?.email,
                         name = user?.displayName
                     )
-
-                    repository.getSessions {
-                        sessions = it
-                    }
+                    loadSessions()
                 },
-                onError = {
+                onError = { errorMessage ->
+                    Log.e("SignInDebug", "Krok 3: BŁĄD! Nie udało się zalogować do Firebase: $errorMessage")
                     isLoading = false
+                    // TODO: Pokaż użytkownikowi błąd (np. Toast)
                 }
             )
 
-        } catch (_: Exception) {
+        } catch (e: GetCredentialException) {
+            // Obsłuż błędy, np. gdy użytkownik anuluje logowanie
+            Log.e("SignInDebug", "Krok 1: BŁĄD! Nie udało się uzyskać poświadczeń z Credential Manager.", e)
             isLoading = false
+            e.printStackTrace()
         }
     }
-
+}
     private fun signOut() {
         authManager.signOut()
         userEmail = null
-        sessions = emptyList()
+        sessionsState = emptyList()
     }
-
+    // Funkcja do ładowania sesji
+    private fun loadSessions() {
+        repository.getSessions { sessions ->
+            sessionsState = sessions
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -81,12 +135,11 @@ class MainActivity : ComponentActivity() {
         )
 
         val currentUser = authManager.auth.currentUser
-        userEmail = currentUser?.email
+        //userEmail = currentUser?.email
 
         if (currentUser != null) {
-            repository.getSessions {
-                sessions = it
-            }
+            userEmail = currentUser.email
+            loadSessions()
         }
 
         setContent {
@@ -99,8 +152,9 @@ class MainActivity : ComponentActivity() {
                     LoginScreen(
                         isLoading = isLoading,
                         onLoginClick = {
-                            isLoading = true
-                            launcher.launch(authManager.getSignInIntent())
+                            //isLoading = true
+                            //launcher.launch(authManager.getSignInIntent())
+                            doSignIn()
                         }
                     )
                 } else {
@@ -112,9 +166,9 @@ class MainActivity : ComponentActivity() {
                                 Intent(context, AddSessionActivity::class.java)
                             )
                         },
-                        homeContent = {
+                        homeContent = { repo -> // `repo` to FirestoreRepository z MainScreen
                             HomeScreen(
-                                sessions = sessions,
+                                sessions = sessionsState, // Używamy zmiennej stanu z MainActivity
                                 onSessionClick = { session ->
                                     context.startActivity(
                                         Intent(
@@ -129,12 +183,22 @@ class MainActivity : ComponentActivity() {
                                     context.startActivity(
                                         Intent(context, AddSessionActivity::class.java)
                                     )
-                                }
+                                },
+                                repository = repo // Przekazujemy repozytorium do HomeScreen
                             )
                         }
+                        // 🔴 KONIEC POPRAWKI 🔴
                     )
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Odświeżamy listę treningów po powrocie do MainActivity
+        if (userEmail != null) {
+            loadSessions()
         }
     }
 }

@@ -11,7 +11,8 @@ data class Series(
     val notes: String = "",
     val createdAt: Timestamp? = null,
     val imageUrl: String? = null,
-    val targetParams: TargetParams? = null
+    val targetParams: TargetParams? = null,
+    val userId: String = ""
 )
 data class TargetParams(
     val centerX: Float = 0f,

@@ -10,15 +10,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.aplikacja_dla_strzelcow.ui.navigation.AppScreen
 import kotlinx.coroutines.launch
+import com.example.aplikacja_dla_strzelcow.data.FirestoreRepository
+
 
 @Composable
 fun MainScreen(
     onLogout: () -> Unit,
     onNewTraining: () -> Unit,
-    homeContent: @Composable () -> Unit
+    homeContent: @Composable (FirestoreRepository) -> Unit
 ) {
     val pagerState = rememberPagerState { AppScreen.values().size }
     val scope = rememberCoroutineScope()
+    val repository = remember { FirestoreRepository() } // Tworzymy instancję repozytorium
 
     Scaffold(
         bottomBar = {
@@ -47,7 +50,7 @@ fun MainScreen(
         ) { page ->
 
             when (AppScreen.values()[page]) {
-                AppScreen.HOME -> homeContent()
+                AppScreen.HOME -> homeContent(repository)
 
                 AppScreen.COMMUNITY -> CommunityScreen()
 

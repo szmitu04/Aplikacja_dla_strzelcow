@@ -48,14 +48,23 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import androidx.compose.foundation.lazy.itemsIndexed // Upewnij się, że ten import jest
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 
 import androidx.compose.material3.ButtonDefaults // DODAJ
 import androidx.compose.material3.ExperimentalMaterial3Api // DODAJ
 import androidx.compose.material3.SuggestionChip // DODAJ
 import androidx.compose.ui.graphics.asImageBitmap // DODAJ
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale // DODAJ
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.unit.min
 
 import androidx.compose.ui.unit.toSize
+//import androidx.preference.forEach
+import kotlin.math.min
+@OptIn(ExperimentalMaterial3Api::class)
 class AddSeriesActivity : ComponentActivity() {
 
     private val repository = FirestoreRepository()
@@ -69,8 +78,8 @@ class AddSeriesActivity : ComponentActivity() {
         setContent {
             Aplikacja_dla_strzelcowTheme {
                 val context = LocalContext.current
-                var weapon by remember { mutableStateOf("") }
-                var ammo by remember { mutableStateOf("") }
+                var weapon by remember { mutableStateOf("Inna") }
+                var ammo by remember { mutableStateOf("Inna") }
                 var distance by remember { mutableStateOf("") }
                 var notes by remember { mutableStateOf("") }
                 var overlayPhotoFile by remember { mutableStateOf<File?>(null) }
@@ -78,10 +87,28 @@ class AddSeriesActivity : ComponentActivity() {
                 // 🔴 DODANE: Zmienna stanu przechowująca wynik detekcji
                 var detectionResult by remember { mutableStateOf<TargetParams?>(null) }
 
+                var originalBitmapSize by remember { mutableStateOf(Size.Zero) }
                 var shotToEdit by remember { mutableStateOf<Shot?>(null) }
                 var shots by remember { mutableStateOf<List<Shot>>(emptyList()) }
                 var isAddingShotMode by remember { mutableStateOf(false) }
                 var showAddShotDialog by remember { mutableStateOf<Offset?>(null) }
+                var imageSizeOnScreen by remember { mutableStateOf(Size.Zero) }
+
+                // Stany dla rozwijanych list
+                var weaponsList by remember { mutableStateOf<List<String>>(emptyList()) }
+                var ammoList by remember { mutableStateOf<List<String>>(emptyList()) }
+
+                var weaponDropdownExpanded by remember { mutableStateOf(false) }
+                var ammoDropdownExpanded by remember { mutableStateOf(false) }
+
+// Ładujemy listy przy starcie
+                LaunchedEffect(Unit) {
+                    repository.getEquipmentLists { weapons, ammo ->
+                        weaponsList = weapons + "Inna" // Dodajemy opcję "Inna"
+                        ammoList = ammo + "Inna"
+                    }
+                }
+
                 val cameraLauncher =
                     rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
@@ -90,11 +117,23 @@ class AddSeriesActivity : ComponentActivity() {
                             val overlayPath = result.data?.getStringExtra("overlayPhotoPath")
                             val data = result.data
                             if (overlayPath != null) {
+
+                                // 🔴 ZAPISUJEMY ROZMIAR BITMAPY PO JEJ OTRZYMANIU
+
                                 overlayPhotoFile = File(overlayPath)
                             }
+
+
                             val originalPath = result.data?.getStringExtra("originalPhotoPath")
                             if (originalPath != null) {
                                 originalPhotoFile = File(originalPath)
+                                // 🔴 ZAPISUJEMY ROZMIAR BITMAPY PO JEJ OTRZYMANIU
+                                val options = BitmapFactory.Options()
+                                options.inJustDecodeBounds = true // Nie ładuj całej bitmapy, tylko jej wymiary
+                                BitmapFactory.decodeFile(originalPath, options)
+                                originalBitmapSize = Size(options.outWidth.toFloat(), options.outHeight.toFloat())
+//
+                                //originalPhotoFile = File(originalPath)
                             }
                             if (data != null) {
                                 detectionResult = TargetParams(
@@ -148,11 +187,26 @@ class AddSeriesActivity : ComponentActivity() {
                             shots = shots,
                             targetParams = detectionResult,
                             isAddingShotMode = isAddingShotMode,
-                            onAddShot = { tapOffset ->
+                            // 🔴 ZMIANA 3: Przekazujemy nowe parametry
+                            onAddShot = { tapOffset, realSize ->
                                 showAddShotDialog = tapOffset
-                                isAddingShotMode = false // Wyłącz tryb dodawania po kliknięciu
+                                imageSizeOnScreen = realSize // Zapisujemy rozmiar do stanu
+                                isAddingShotMode = false
+                            },
+                            onSizeChanged = { realSize ->
+//                                imageSizeOnScreen = realSize // Zapisujemy rozmiar do stanu
                             }
                         )
+//                        TargetImageWithShots(
+//                            imageFile = overlayPhotoFile!!,
+//                            shots = shots,
+//                            targetParams = detectionResult,
+//                            isAddingShotMode = isAddingShotMode,
+//                            onAddShot = { tapOffset ->
+//                                showAddShotDialog = tapOffset
+//                                isAddingShotMode = false // Wyłącz tryb dodawania po kliknięciu
+//                            }
+//                        )
 
 
 
@@ -169,23 +223,101 @@ class AddSeriesActivity : ComponentActivity() {
                         ShotsList(
                             shots = shots,
                             onAddClick = { isAddingShotMode = true },
-                            onShotClick = { /* TODO: Edycja punktów */ }
+                            onShotClick = { clickedShot ->
+                                shotToEdit = clickedShot
+                            }
                         )
                     }
 
-                    OutlinedTextField(
-                        value = weapon,
-                        onValueChange = { weapon = it },
-                        label = { Text("Broń") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Box {
+                        // Używamy `ExposedDropdownMenuBox` - to jest zalecany sposób tworzenia takich pól
+                        ExposedDropdownMenuBox(
+                            expanded = weaponDropdownExpanded,
+                            onExpandedChange = { weaponDropdownExpanded = !weaponDropdownExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = weapon,
+                                onValueChange = {}, // Pusta lambda, bo pole jest tylko do odczytu
+                                label = { Text("Broń") },
+                                readOnly = true, // `readOnly = true` jest wymagane przez ExposedDropdownMenuBox
+                                trailingIcon = {
+                                    // Dodajemy ikonę strzałki dla lepszego UX
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = weaponDropdownExpanded)
+                                },
+                                modifier = Modifier
+                                    .menuAnchor() // Łączy pole tekstowe z menu
+                                    .fillMaxWidth()
+                            )
+                            // Menu, które się rozwija
+                            ExposedDropdownMenu(
+                                expanded = weaponDropdownExpanded,
+                                onDismissRequest = { weaponDropdownExpanded = false }
+                            ) {
+                                weaponsList.forEach { item ->
+                                    DropdownMenuItem(
+                                        text = { Text(item) },
+                                        onClick = {
+                                            weapon = item
+                                            weaponDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
 
-                    OutlinedTextField(
-                        value = ammo,
-                        onValueChange = { ammo = it },
-                        label = { Text("Amunicja") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Spacer(modifier = Modifier.height(8.dp)) // Dodajemy trochę przestrzeni
+
+// --- ZASTĄP BLOK "AMUNICJA" PONIŻSZYM KODEM ---
+                    Box {
+                        ExposedDropdownMenuBox(
+                            expanded = ammoDropdownExpanded,
+                            onExpandedChange = { ammoDropdownExpanded = !ammoDropdownExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = ammo,
+                                onValueChange = {},
+                                label = { Text("Amunicja") },
+                                readOnly = true,
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = ammoDropdownExpanded)
+                                },
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = ammoDropdownExpanded,
+                                onDismissRequest = { ammoDropdownExpanded = false }
+                            ) {
+                                ammoList.forEach { item ->
+                                    DropdownMenuItem(
+                                        text = { Text(item) },
+                                        onClick = {
+                                            ammo = item
+                                            ammoDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+
+
+//                    OutlinedTextField(
+//                        value = weapon,
+//                        onValueChange = { weapon = it },
+//                        label = { Text("Broń") },
+//                        modifier = Modifier.fillMaxWidth()
+//                    )
+//
+//                    OutlinedTextField(
+//                        value = ammo,
+//                        onValueChange = { ammo = it },
+//                        label = { Text("Amunicja") },
+//                        modifier = Modifier.fillMaxWidth()
+//                    )
 
                     OutlinedTextField(
                         value = distance,
@@ -267,16 +399,18 @@ class AddSeriesActivity : ComponentActivity() {
                     AddShotValueDialog(
                         onDismiss = { showAddShotDialog = null },
                         onSave = { value ->
-                            val (x, y) = convertPxToRelative(
+                            val (x, y) = convertTapToRelative(
                                 tapOffset = showAddShotDialog!!,
-                                imageSize = Size(
-                                    overlayPhotoFile!!.inputStream().use { BitmapFactory.decodeStream(it) }.width.toFloat(),
-                                    overlayPhotoFile!!.inputStream().use { BitmapFactory.decodeStream(it) }.height.toFloat()
-                                ),
+                                // Używamy poprawnego rozmiaru zapisanego w stanie
+                                composableSize = imageSizeOnScreen, // Rozmiar Composable, w którym kliknięto
+                                originalBitmapSize = originalBitmapSize, // Rozmiar oryginalnego pliku zdjęcia
                                 targetParams = detectionResult!!
+
+                                //imageSizeOnScreen = imageSizeOnScreen,
+                                //targetParams = detectionResult!!
                             )
 
-                            shots = shots + Shot(x = x, y = y, value = value, timestamp = Timestamp.now())
+                            shots = shots + Shot(x = x, y = y, value = value, timestamp = Timestamp.now(), isManual = true)
                             showAddShotDialog = null
                         }
                     )
@@ -318,19 +452,33 @@ fun TargetImageWithShots(
     shots: List<Shot>,
     targetParams: TargetParams?,
     isAddingShotMode: Boolean,
-    onAddShot: (Offset) -> Unit
+    onAddShot: (tapOffset: Offset, imageSize: Size) -> Unit,
+    //onAddShot: (Offset) -> Unit
+    onSizeChanged: (Size) -> Unit
 ) {
     val bitmap = remember(imageFile) { loadBitmapWithRotation(imageFile) }
-    var imageSize by remember { mutableStateOf(Size.Zero) }
+    //var imageSize by remember { mutableStateOf(Size.Zero) }
+
+    val bitmapOptions = remember(imageFile) {
+        BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            .also { BitmapFactory.decodeFile(imageFile.path, it) }
+    }
+    val imageAspectRatio = if (bitmapOptions.outHeight > 0) {
+        bitmapOptions.outWidth.toFloat() / bitmapOptions.outHeight.toFloat()
+    } else {
+        1f // Domyślnie kwadrat, jeśli nie uda się odczytać proporcji
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
+            .aspectRatio(1f) // Utrzymujemy kwadratowe proporcje
+            //.aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
             .pointerInput(isAddingShotMode, targetParams) {
                 if (isAddingShotMode && targetParams != null) {
                     detectTapGestures { offset ->
-                        onAddShot(offset)
+                        onAddShot(offset, this.size.toSize())
+                        // onAddShot(offset)
                     }
                 }
             }
@@ -339,24 +487,101 @@ fun TargetImageWithShots(
             model = imageFile,
             contentDescription = "Zdjęcie tarczy",
             modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit, // Ważne, aby obraz był dopasowany
             onSuccess = { state ->
-                imageSize = Size(
-                    state.painter.intrinsicSize.width,
-                    state.painter.intrinsicSize.height
-                )
+                onSizeChanged(state.painter.intrinsicSize)
+//                imageSize = Size(
+//                    state.painter.intrinsicSize.width,
+//                    state.painter.intrinsicSize.height
+//                )
             }
         )
+        //rysowanie ramek, zielone dla automatycznych, rowe dla rozowe dla recznych
         if (targetParams != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                shots.forEach { shot ->
-                    val (px, py) = convertRelativeToPx(shot, imageSize, targetParams)
+                val canvasWidth = size.width
+                val canvasHeight = size.height
+
+                // Pobieramy rozmiar oryginalnej bitmapy (potrzebujemy go do obliczenia proporcji)
+                val bitmapOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(imageFile.path, bitmapOptions)
+                val bitmapWidth = bitmapOptions.outWidth.toFloat()
+                val bitmapHeight = bitmapOptions.outHeight.toFloat()
+
+                if (bitmapWidth == 0f || bitmapHeight == 0f) return@Canvas
+
+                // 1. Obliczamy skalę i przesunięcie (offset), tak jak robi to `ContentScale.Fit`
+                val scaleX = canvasWidth / bitmapWidth
+                val scaleY = canvasHeight / bitmapHeight
+                val scale = min(scaleX, scaleY)
+
+                val scaledWidth = bitmapWidth * scale
+                val scaledHeight = bitmapHeight * scale
+
+                val offsetX = (canvasWidth - scaledWidth) / 2f
+                val offsetY = (canvasHeight - scaledHeight) / 2f
+
+                // Przygotowujemy Paint do rysowania tekstu
+                val textPaint = android.graphics.Paint().apply {
+                    textSize = 40f
+                    style = android.graphics.Paint.Style.FILL
+                    isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    setShadowLayer(5f, 1f, 1f, android.graphics.Color.BLACK)
+                }
+                shots.forEachIndexed { index, shot ->
+                    // Przeliczamy względne koordynaty strzału na piksele na *przeskalowanej bitmapie*
+                    val shotXOnScaledBitmap = targetParams.centerX * scaledWidth + shot.x * (targetParams.radius * min(scaledWidth, scaledHeight))
+                    val shotYOnScaledBitmap = targetParams.centerY * scaledHeight + shot.y * (targetParams.radius * min(scaledWidth, scaledHeight))
+
+                    // Dodajemy offset, aby umieścić ramkę w poprawnym miejscu na canvasie
+                    val finalX = shotXOnScaledBitmap + offsetX
+                    val finalY = shotYOnScaledBitmap + offsetY
+
+                    val color = if (shot.isManual) Color.Magenta else Color.Green
+
                     drawRect(
-                        color = Color.Magenta,
-                        topLeft = Offset(px - 15f, py - 15f),
+                        color = color,
+                        topLeft = Offset(finalX - 15f, finalY - 15f),
                         size = Size(30f, 30f),
                         style = Stroke(width = 4f)
                     )
+                    // 🔴 NOWOŚĆ: Rysowanie numeru w odpowiednim kolorze 🔴
+                    val shotNumber = (index + 1).toString()
+                    textPaint.color = color.toArgb() // Ustawiamy kolor tekstu taki sam jak ramki
+
+                    // Rysujemy numer poniżej ramki
+                    drawContext.canvas.nativeCanvas.drawText(
+                        shotNumber,
+                        finalX,
+                        finalY + 45f, // Dostosuj pozycję Y, aby numer był pod ramką
+                        textPaint
+                    )
                 }
+
+//                shots.forEach { shot ->
+//                    if (shot.isManual) {
+//                        // Rysuj RÓŻOWE ramki dla strzałów ręcznych
+//                        // Używamy `convertRelativeToPxSimple`, bo ręczne dodawanie już poprawnie przeliczyło koordynaty
+//                        val (px, py) = convertRelativeToPxSimple(shot, canvasSize, targetParams)
+//                        drawRect(
+//                            color = Color.Magenta,
+//                            topLeft = Offset(px - 15f, py - 15f),
+//                            size = Size(30f, 30f),
+//                            style = Stroke(width = 4f)
+//                        )
+//                    } else {
+//                        // Rysuj ZIELONE ramki dla strzałów automatycznych
+//                        // Używamy `convertRelativeToPxSimple`, która nie powoduje przesunięcia
+//                        val (px, py) = convertRelativeToPxSimple(shot, canvasSize, targetParams)
+//                        drawRect(
+//                            color = Color.Green,
+//                            topLeft = Offset(px - 15f, py - 15f),
+//                            size = Size(30f, 30f),
+//                            style = Stroke(width = 4f)
+//                        )
+//                    }
+//                }
             }
         }
         if (isAddingShotMode) {
@@ -428,10 +653,10 @@ fun AddShotValueDialog(onDismiss: () -> Unit, onSave: (Int) -> Unit) {
 // --- FUNKCJE POMOCNICZE DO KONWERSJI WSPÓŁRZĘDNYCH ---
 
 // Przelicza współrzędne względne strzału (-1..1) na piksele na obrazie
-fun convertRelativeToPx(shot: Shot, imageSize: Size, targetParams: TargetParams): Offset {
-    val norm = kotlin.math.min(imageSize.width, imageSize.height)
-    val centerX_px = targetParams.centerX * imageSize.width
-    val centerY_px = targetParams.centerY * imageSize.height
+fun convertRelativeToPx(shot: Shot, imageSizeInPixels: Size, targetParams: TargetParams): Offset {
+    val norm = min(imageSizeInPixels.width, imageSizeInPixels.height)
+    val centerX_px = targetParams.centerX * imageSizeInPixels.width
+    val centerY_px = targetParams.centerY * imageSizeInPixels.height
     val radius_px = targetParams.radius * norm
 
     val shotX_px = centerX_px + shot.x * radius_px
@@ -439,15 +664,41 @@ fun convertRelativeToPx(shot: Shot, imageSize: Size, targetParams: TargetParams)
     return Offset(shotX_px, shotY_px)
 }
 
-// Przelicza piksele z kliknięcia na współrzędne względne tarczy
-fun convertPxToRelative(tapOffset: Offset, imageSize: Size, targetParams: TargetParams): Pair<Float, Float> {
-    val norm = kotlin.math.min(imageSize.width, imageSize.height)
-    val centerX_px = targetParams.centerX * imageSize.width
-    val centerY_px = targetParams.centerY * imageSize.height
+// NOWA/STARA funkcja do rysowania ZIELONYCH ramek (automatycznych)
+// Nie używa rozmiaru ekranu, bazuje na proporcjach.
+fun convertRelativeToPxSimple(shot: Shot, composableSize: Size, targetParams: TargetParams): Offset {
+    val norm = min(composableSize.width, composableSize.height)
+    val centerX_px = targetParams.centerX * composableSize.width
+    val centerY_px = targetParams.centerY * composableSize.height
     val radius_px = targetParams.radius * norm
 
-    val relativeX = (tapOffset.x - centerX_px) / radius_px
-    val relativeY = (tapOffset.y - centerY_px) / radius_px
+    val shotX_px = centerX_px + shot.x * radius_px
+    val shotY_px = centerY_px + shot.y * radius_px
+    return Offset(shotX_px, shotY_px)
+}
+
+
+// Przelicza piksele z kliknięcia na współrzędne względne tarczy
+fun convertPxToRelative(
+    tapOffset: Offset,
+    imageSizeOnScreen: Size, // Teraz to jest rozmiar Composable, a nie pliku
+    targetParams: TargetParams
+): Pair<Float, Float> {
+    // Współrzędne kliknięcia są już w systemie koordynatów Composable
+    val tapX = tapOffset.x
+    val tapY = tapOffset.y
+
+    // Przeliczamy znormalizowane parametry tarczy (0-1) na piksele
+    // na podstawie realnego rozmiaru obrazu na ekranie
+    val centerX_px = targetParams.centerX * imageSizeOnScreen.width
+    val centerY_px = targetParams.centerY * imageSizeOnScreen.height
+    val norm = min(imageSizeOnScreen.width, imageSizeOnScreen.height)
+    val radius_px = targetParams.radius * norm
+
+    // Obliczamy względne koordynaty strzału
+    val relativeX = (tapX - centerX_px) / radius_px
+    val relativeY = (tapY - centerY_px) / radius_px
+
     return Pair(relativeX, relativeY)
 }
 @Composable
@@ -489,7 +740,52 @@ fun EditShotDialog(
         }
     )
 }
+// FUNKCJA TYLKO DO RĘCZNEGO DODAWANIA:
+// Przelicza dotyk na ekranie na względne koordynaty, uwzględniając proporcje obrazu.
+fun convertTapToRelative(
+    tapOffset: Offset,
+    composableSize: Size, // Rozmiar Composable (Box), na którym kliknięto
+    originalBitmapSize: Size, // Rozmiar oryginalnego pliku zdjęcia
+    targetParams: TargetParams
+): Pair<Float, Float> {
+    // 1. Sprawdzamy, czy mamy poprawne dane, aby uniknąć dzielenia przez zero.
+    if (originalBitmapSize.width == 0f || originalBitmapSize.height == 0f) {
+        return Pair(0f, 0f) // Zwróć bezpieczną wartość w razie błędu
+    }
+    if (targetParams.radius <= 0f) {
+        return Pair(0f, 0f)
+    }
 
+    // 2. Obliczamy współczynniki skalowania i marginesy, aby odtworzyć `ContentScale.Fit`.
+    val scaleX = composableSize.width / originalBitmapSize.width
+    val scaleY = composableSize.height / originalBitmapSize.height
+    val scale = min(scaleX, scaleY) // Skala dopasowania
+
+    val scaledWidth = originalBitmapSize.width * scale
+    val scaledHeight = originalBitmapSize.height * scale
+
+    // Przesunięcie obrazu (marginesy), jeśli jest on wyśrodkowany w Composable.
+    val offsetX = (composableSize.width - scaledWidth) / 2f
+    val offsetY = (composableSize.height - scaledHeight) / 2f
+
+    // 3. Przeliczamy współrzędne dotyku na Composable na odpowiadające im współrzędne na oryginalnej bitmapie.
+    // To jest kluczowy krok: "usuwamy" marginesy i skalowanie z pozycji dotyku.
+    val tapXOnBitmap = (tapOffset.x - offsetX) / scale
+    val tapYOnBitmap = (tapOffset.y - offsetY) / scale
+
+    // 4. Obliczamy współrzędne środka i promień tarczy w pikselach na oryginalnej bitmapie.
+    val centerX_onBitmap = targetParams.centerX * originalBitmapSize.width
+    val centerY_onBitmap = targetParams.centerY * originalBitmapSize.height
+    val norm_onBitmap = min(originalBitmapSize.width, originalBitmapSize.height)
+    val radius_onBitmap = targetParams.radius * norm_onBitmap
+
+    // 5. Obliczamy finalne współrzędne względne, normalizując pozycję dotyku na bitmapie
+    // względem środka i promienia tarczy na tej samej bitmapie.
+    val relativeX = (tapXOnBitmap - centerX_onBitmap) / radius_onBitmap
+    val relativeY = (tapYOnBitmap - centerY_onBitmap) / radius_onBitmap
+
+    return Pair(relativeX, relativeY)
+}
 //
 //import android.os.Bundle
 //import androidx.activity.ComponentActivity

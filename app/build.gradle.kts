@@ -56,14 +56,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // --- Firebase (JEDEN BoM!) ---
-    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.8.0"))
 
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
 
     // --- Google Sign-In ---
-    implementation("com.google.android.gms:play-services-auth:21.4.0")
+    //implementation("com.google.android.gms:play-services-auth:21.5.0")
 
     // --- CameraX ---
     implementation("androidx.camera:camera-camera2:1.5.2")
@@ -80,6 +80,17 @@ dependencies {
     implementation(libs.androidx.exifinterface)
 
     implementation("com.google.code.gson:gson:2.13.2")
+    implementation(libs.androidx.compose.animation.graphics)
+
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+
+    // Główna biblioteka Credential Manager
+    implementation("androidx.credentials:credentials:1.3.0-alpha03")
+    //implementation("androidx.credentials:credentials:1.5.0")
+    // Integracja z logowaniem Google
+    //implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation(libs.google.googleid)
+
 }
 
 //dependencies {

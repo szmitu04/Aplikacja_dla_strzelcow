@@ -32,6 +32,7 @@ import java.io.File
 import com.example.aplikacja_dla_strzelcow.cv.TargetDetector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalContext
 import com.example.aplikacja_dla_strzelcow.cv.ShotDetector
 //import com.example.aplikacja_dla_strzelcow.cv.TargetDetectionResult
 import com.example.aplikacja_dla_strzelcow.cv.drawTargetOverlay
@@ -57,6 +58,13 @@ class CameraActivity : ComponentActivity() {
             var detectionResult by remember { mutableStateOf<TargetParams?>(null) }
             var photoFile by remember { mutableStateOf<File?>(null) }
             var isAnalyzing by remember { mutableStateOf(false) }
+            val context = LocalContext.current
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black), // Czarne tło
+                contentAlignment = Alignment.Center
+            ){
             CameraScreen(
                 photoFile = photoFile,
                 analyzedBitmap = analyzedBitmap,
@@ -84,7 +92,7 @@ class CameraActivity : ComponentActivity() {
                         isAnalyzing = false
                         return@CameraScreen
                     }
-                    val detectedShots = ShotDetector.detect(originalBitmap, targetResult)
+                    val detectedShots = ShotDetector.detect(originalBitmap, targetResult, context)
                     // 2. Rysujemy otoczkę tarczy ORAZ ramki wokół strzałów
                     val overlayBitmap = drawTargetOverlay(
                         originalBitmap,
@@ -145,7 +153,7 @@ class CameraActivity : ComponentActivity() {
                 }
             )
         }
-
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -211,10 +219,12 @@ fun CameraScreen(
 
         if (photoFile == null) {
             AndroidView(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .aspectRatio(3 / 4f),
                 factory = { context ->
                     PreviewView(context).apply {
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                        scaleType = PreviewView.ScaleType.FIT_CENTER
                         onPreviewReady(this)
                     }
                 }
@@ -224,7 +234,7 @@ fun CameraScreen(
                 onClick = onTakePhoto,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(24.dp)
+                    .padding(50.dp)
             ) {
                 Text("Zrób zdjęcie")
             }
@@ -255,7 +265,7 @@ fun CameraScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(16.dp),
+                    .padding(50.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Button(onClick = onRetry) {

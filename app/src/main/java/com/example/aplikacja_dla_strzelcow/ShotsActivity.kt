@@ -87,14 +87,14 @@ class ShotsActivity : ComponentActivity() {
     }
 }
 
-//@Composable
-//fun ShotItem(shot: Shot) {
-//    Column(
-//        modifier = Modifier
-//            .fillMaxWidth()
-//            .padding(12.dp)
-//    ) {
-//        Text("x = ${shot.x}, y = ${shot.y}")
-//        Text("Punkty: ${shot.value}")
-//    }
-//}
+@Composable
+fun ShotItem(shot: Shot) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp)
+    ) {
+        Text("x = ${shot.x}, y = ${shot.y}")
+        Text("Punkty: ${shot.value}")
+    }
+}
