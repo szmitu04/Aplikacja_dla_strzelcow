@@ -13,7 +13,7 @@ import com.google.firebase.storage.FirebaseStorage
 import java.io.File
 import java.util.Date
 import com.google.firebase.firestore.Query
-
+import com.google.firebase.firestore.SetOptions
 
 class FirestoreRepository {
 
@@ -34,7 +34,7 @@ class FirestoreRepository {
 
         db.collection("users")
             .document(userId)
-            .set(data)
+            .set(data, SetOptions.merge())
     }
 
     fun createSession(
@@ -61,13 +61,13 @@ class FirestoreRepository {
         onCreated: (String) -> Unit
     ) {
         val userId = uid() ?: return
-        val seriesWithUser = series.copy(userId = userId)
+        val seriesWithUser = series.copy(userId = userId, sessionId = sessionId)
 
         // 1. Zapisujemy dokument serii
         db.collection("users").document(userId)
             .collection("sessions").document(sessionId)
             .collection("series")
-            .add(series) // Firestore ignoruje pole `id` przy zapisie
+            .add(seriesWithUser) // Firestore ignoruje pole `id` przy zapisie
             .addOnSuccessListener { seriesDocRef ->
                 val seriesId = seriesDocRef.id
                 onCreated(seriesId) // Zwracamy ID utworzonej serii
@@ -143,7 +143,12 @@ class FirestoreRepository {
     fun getSessions(
         onResult: (List<Session>) -> Unit
     ) {
-        val userId = uid() ?: return
+        val userId = uid() //?: return
+        if (userId == null) {
+            Log.w("FirestoreRepo", "getSessions: Błąd - użytkownik jest niezalogowany. Zwracam pustą listę.")
+            onResult(emptyList()) // Zawsze zwróć pustą listę, jeśli nie ma usera
+            return
+        }
         db.collection("users").document(userId)
             .collection("sessions")
             .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -156,6 +161,10 @@ class FirestoreRepository {
                         session.copy(id = result.documents[index].id)
                     }
                 onResult(sessions)
+            }
+            .addOnFailureListener { exception ->
+                Log.e("FirestoreRepo", "getSessions: Błąd przy pobieraniu sesji.", exception)
+                onResult(emptyList()) // Zawsze zwróć pustą listę przy błędzie
             }
     }
     fun getSeries(
@@ -307,7 +316,10 @@ class FirestoreRepository {
                 var seriesCounter = seriesSnapshot.size()
 
                 seriesSnapshot.documents.forEach { seriesDoc ->
-                    val series = seriesDoc.toObject(Series::class.java)?.copy(id = seriesDoc.id) ?: Series()
+                    val series = seriesDoc.toObject(Series::class.java)?.copy(
+                        id = seriesDoc.id,
+                        sessionId = sessionId // Używamy `sessionId` przekazanego do funkcji!
+                    ) ?: Series()
 
                     // Dla każdej serii pobieramy jej podkolekcję strzałów
                     seriesDoc.reference.collection("shots").orderBy("timestamp").get()

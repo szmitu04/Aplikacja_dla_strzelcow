@@ -5,6 +5,7 @@ import com.google.firebase.Timestamp
 
 data class Series(
     val id: String = "",
+    val sessionId: String = "",
     val weapon: String = "",
     val ammo: String = "",
     val distance: Int = 0,

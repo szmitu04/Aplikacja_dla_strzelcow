@@ -1,24 +1,28 @@
 package com.example.aplikacja_dla_strzelcow.ui.statistics
 
-
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
+import com.example.aplikacja_dla_strzelcow.cv.GroupingAnalyzer
+import com.example.aplikacja_dla_strzelcow.cv.GroupingAnalysisResult
 import com.example.aplikacja_dla_strzelcow.cv.HeatmapGenerator
 import com.example.aplikacja_dla_strzelcow.data.FirestoreRepository
-import com.example.aplikacja_dla_strzelcow.data.Series
 import com.example.aplikacja_dla_strzelcow.data.Session
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import java.util.Calendar
-import java.util.Date
-import android.util.Log
 import org.opencv.android.OpenCVLoader
-import com.example.aplikacja_dla_strzelcow.cv.GroupingAnalysisResult
-import com.example.aplikacja_dla_strzelcow.cv.GroupingAnalyzer
-// --- KLASY STANU I ENUMY (ich miejsce jest tutaj) ---
+import java.util.*
+
+// --- KLASY STANU I ENUMY ---
+
+enum class FilterMode(val displayName: String) {
+    TIME("Zakres Czasu"),
+    TRAINING("Trening")
+}
 
 data class StatisticsUiState(
+    val filterMode: FilterMode = FilterMode.TIME,
     val timeFilter: TimeFilter = TimeFilter.LAST_30_DAYS,
     val trainingFilter: Session? = null,
     val selectedWeapon: String = "Wszystkie",
@@ -29,12 +33,13 @@ data class StatisticsUiState(
     val availableTrainings: List<Session> = emptyList(),
     val analysisResult: AnalysisResult? = null,
     val isLoading: Boolean = false
-)
+) {
+    val isTimeFilterActive: Boolean get() = filterMode == FilterMode.TIME
+}
 
 sealed class AnalysisResult {
     data class Heatmap(val bitmap: Bitmap) : AnalysisResult()
     data class Grouping(val result: GroupingAnalysisResult) : AnalysisResult()
-
 }
 
 enum class TimeFilter(val displayName: String) {
@@ -49,7 +54,6 @@ enum class AnalysisType(val displayName: String) {
     GROUPING("Analiza skupienia")
 }
 
-
 // --- VIEWMODEL ---
 
 class StatisticsViewModel : ViewModel() {
@@ -60,7 +64,6 @@ class StatisticsViewModel : ViewModel() {
 
     init {
         OpenCVLoader.initDebug()
-
         loadInitialData()
     }
 
@@ -74,16 +77,25 @@ class StatisticsViewModel : ViewModel() {
             }
         }
         repository.getSessions { sessions ->
-            _uiState.update { it.copy(availableTrainings = sessions) }
+            _uiState.update {
+                it.copy(
+                    availableTrainings = sessions,
+                    trainingFilter = sessions.firstOrNull()
+                )
+            }
         }
     }
 
+    fun onFilterModeChanged(newMode: FilterMode) {
+        _uiState.update { it.copy(filterMode = newMode) }
+    }
+
     fun onTimeFilterChanged(filter: TimeFilter) {
-        _uiState.update { it.copy(timeFilter = filter, trainingFilter = null) }
+        _uiState.update { it.copy(timeFilter = filter, filterMode = FilterMode.TIME) }
     }
 
     fun onTrainingFilterChanged(session: Session) {
-        _uiState.update { it.copy(trainingFilter = session) }
+        _uiState.update { it.copy(trainingFilter = session, filterMode = FilterMode.TRAINING) }
     }
 
     fun onWeaponChanged(weapon: String) {
@@ -97,46 +109,43 @@ class StatisticsViewModel : ViewModel() {
     fun onAnalysisTypeChanged(type: AnalysisType) {
         _uiState.update { it.copy(analysisType = type) }
     }
-/*
+
+    // 🔴 POPRAWIONA I JEDYNA WERSJA FUNKCJI `generateAnalysis`
     fun generateAnalysis() {
         _uiState.update { it.copy(isLoading = true, analysisResult = null) }
         Log.d("ViewModelDebug", "Rozpoczęto generowanie analizy z filtrami: ${_uiState.value}")
 
-        // 🔴 NOWA LOGIKA: Używamy prostej funkcji i filtrujemy w kodzie 🔴
-        repository.getAllSeriesWithShots { allData ->
-            Log.d("ViewModelDebug", "Otrzymano z Firestore: ${allData.size} serii.")
+        repository.getAllTrainingsWithSeriesAndShots { allData ->
+            Log.d("ViewModelDebug", "Otrzymano z Firestore: ${allData.size} serii (z wszystkich treningów).")
 
             val currentState = _uiState.value
-            val startDate: Date? = if (currentState.trainingFilter == null) {
-                val calendar = Calendar.getInstance()
-                when (currentState.timeFilter) {
-                    TimeFilter.LAST_24_HOURS -> calendar.apply { add(Calendar.HOUR, -24) }
-                    TimeFilter.LAST_7_DAYS -> calendar.apply { add(Calendar.DAY_OF_YEAR, -7) }
-                    TimeFilter.LAST_30_DAYS -> calendar.apply { add(Calendar.DAY_OF_YEAR, -30) }
-                    TimeFilter.LAST_YEAR -> calendar.apply { add(Calendar.YEAR, -1) }
-                }.time
-            } else {
-                null
-            }
 
-            // 1. Filtruj dane na podstawie wybranych opcji
-            val filteredData = allData.filter { (series, shots) ->
-                val dateMatch = startDate == null || (series.createdAt?.toDate()?.after(startDate) ?: false)
+            val filteredData = allData.filter { (series, _) ->
+                val primaryFilterMatch = if (currentState.isTimeFilterActive) {
+                    val calendar = Calendar.getInstance()
+                    val startDate = when (currentState.timeFilter) {
+                        TimeFilter.LAST_24_HOURS -> calendar.apply { add(Calendar.HOUR, -24) }.time
+                        TimeFilter.LAST_7_DAYS -> calendar.apply { add(Calendar.DAY_OF_YEAR, -7) }.time
+                        TimeFilter.LAST_30_DAYS -> calendar.apply { add(Calendar.DAY_OF_YEAR, -30) }.time
+                        TimeFilter.LAST_YEAR -> calendar.apply { add(Calendar.YEAR, -1) }.time
+                    }
+                    series.createdAt?.toDate()?.after(startDate) ?: false
+                } else {
+                    series.sessionId == currentState.trainingFilter?.id
+                }
+
                 val weaponMatch = currentState.selectedWeapon == "Wszystkie" || series.weapon == currentState.selectedWeapon
                 val ammoMatch = currentState.selectedAmmo == "Wszystkie" || series.ammo == currentState.selectedAmmo
-                // TODO: Dodaj filtr po treningu (sessionId)
 
-                dateMatch && weaponMatch && ammoMatch
+                primaryFilterMatch && weaponMatch && ammoMatch
             }
             Log.d("ViewModelDebug", "Po przefiltrowaniu zostało: ${filteredData.size} serii.")
 
-            // 2. Zbierz wszystkie strzały z przefiltrowanych serii
-            val shotsToAnalyze = filteredData.flatMap { it.second }
-            Log.d("ViewModelDebug", "Łączna liczba strzałów do analizy: ${shotsToAnalyze.size}.")
-
-            // 3. Generuj analizę (ten kod pozostaje bez zmian)
             val analysisResult: AnalysisResult? = when (currentState.analysisType) {
                 AnalysisType.HEATMAP -> {
+                    // Użyj przefiltrowanych danych
+                    val shotsToAnalyze = filteredData.flatMap { it.second }
+                    Log.d("ViewModelDebug", "Łączna liczba strzałów do analizy HEATMAP: ${shotsToAnalyze.size}.")
                     if (shotsToAnalyze.isNotEmpty()) {
                         HeatmapGenerator.generate(shotsToAnalyze, width = 500, height = 500)?.let { bitmap ->
                             AnalysisResult.Heatmap(bitmap)
@@ -144,74 +153,16 @@ class StatisticsViewModel : ViewModel() {
                     } else null
                 }
                 AnalysisType.GROUPING -> {
-                    null
+                    Log.d("ViewModelDebug", "Liczba serii do analizy GROUPING: ${filteredData.size}.")
+                    // Użyj przefiltrowanych danych
+                    GroupingAnalyzer.analyze(filteredData, requiredShotsInSeries = 5)?.let { result ->
+                        AnalysisResult.Grouping(result)
+                    }
                 }
             }
             Log.d("ViewModelDebug", "Wynik analizy: $analysisResult")
 
-            // 4. Zaktualizuj UI
             _uiState.update { it.copy(isLoading = false, analysisResult = analysisResult) }
         }
     }
-*/
-fun generateAnalysis() {
-    _uiState.update { it.copy(isLoading = true, analysisResult = null) }
-    Log.d("ViewModelDebug", "Rozpoczęto generowanie analizy z filtrami: ${_uiState.value}")
-
-    // 🔴 UŻYWAMY NOWEJ, NIEZAWODNEJ FUNKCJI 🔴
-    repository.getAllTrainingsWithSeriesAndShots { allData ->
-        Log.d("ViewModelDebug", "Otrzymano z Firestore: ${allData.size} serii (z wszystkich treningów).")
-
-        val currentState = _uiState.value
-        val startDate: Date? = if (currentState.trainingFilter == null) {
-            val calendar = Calendar.getInstance()
-            when (currentState.timeFilter) {
-                TimeFilter.LAST_24_HOURS -> calendar.apply { add(Calendar.HOUR, -24) }
-                TimeFilter.LAST_7_DAYS -> calendar.apply { add(Calendar.DAY_OF_YEAR, -7) }
-                TimeFilter.LAST_30_DAYS -> calendar.apply { add(Calendar.DAY_OF_YEAR, -30) }
-                TimeFilter.LAST_YEAR -> calendar.apply { add(Calendar.YEAR, -1) }
-            }.time
-        } else {
-            null
-        }
-
-        // --- DALSZA CZĘŚĆ FUNKCJI POZOSTAJE BEZ ZMIAN ---
-
-        // 1. Filtruj dane na podstawie wybranych opcji
-        val filteredData = allData.filter { (series, _) ->
-            val dateMatch = startDate == null || (series.createdAt?.toDate()?.after(startDate) ?: false)
-            val weaponMatch = currentState.selectedWeapon == "Wszystkie" || series.weapon == currentState.selectedWeapon
-            val ammoMatch = currentState.selectedAmmo == "Wszystkie" || series.ammo == currentState.selectedAmmo
-            // TODO: Dodaj filtr po treningu (sessionId)
-
-            dateMatch && weaponMatch && ammoMatch
-        }
-        Log.d("ViewModelDebug", "Po przefiltrowaniu zostało: ${filteredData.size} serii.")
-
-        // 2. Zbierz wszystkie strzały z przefiltrowanych serii
-        val shotsToAnalyze = filteredData.flatMap { it.second }
-        Log.d("ViewModelDebug", "Łączna liczba strzałów do analizy: ${shotsToAnalyze.size}.")
-
-        // 3. Generuj analizę
-        val analysisResult: AnalysisResult? = when (currentState.analysisType) {
-            AnalysisType.HEATMAP -> {
-                if (shotsToAnalyze.isNotEmpty()) {
-                    HeatmapGenerator.generate(shotsToAnalyze, width = 500, height = 500)?.let { bitmap ->
-                        AnalysisResult.Heatmap(bitmap)
-                    }
-                } else null
-            }
-            AnalysisType.GROUPING -> {
-                // Przekazujemy przefiltrowane serie (każda z listą swoich strzałów) do analizatora.
-                GroupingAnalyzer.analyze(filteredData, requiredShotsInSeries = 5)?.let { result ->
-                    AnalysisResult.Grouping(result)
-                }
-            }
-        }
-        Log.d("ViewModelDebug", "Wynik analizy: $analysisResult")
-
-        // 4. Zaktualizuj UI
-        _uiState.update { it.copy(isLoading = false, analysisResult = analysisResult) }
-    }
-}
 }

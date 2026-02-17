@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.SegmentedButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -22,8 +23,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.aplikacja_dla_strzelcow.R
 import androidx.compose.ui.graphics.drawscope.Stroke
+//import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
-
+import java.text.SimpleDateFormat // 👈 DODANY IMPORT
+import java.util.Locale
 import kotlin.math.min
 
 class StatisticsActivity : ComponentActivity() {
@@ -46,11 +49,9 @@ class StatisticsActivity : ComponentActivity() {
                         .padding(16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // --- FILTRY ---
                     Text("Filtry", style = MaterialTheme.typography.titleLarge)
                     FilterSection(uiState, viewModel)
 
-                    // --- TYP ANALIZY ---
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Rodzaj analizy", style = MaterialTheme.typography.titleMedium)
                     AnalysisTypeSelector(
@@ -58,7 +59,6 @@ class StatisticsActivity : ComponentActivity() {
                         onTypeSelected = { viewModel.onAnalysisTypeChanged(it) }
                     )
 
-                    // --- PRZYCISK GENEROWANIA ---
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
                         onClick = { viewModel.generateAnalysis() },
@@ -72,7 +72,6 @@ class StatisticsActivity : ComponentActivity() {
                         }
                     }
 
-                    // --- OBSZAR WYNIKÓW ---
                     Spacer(modifier = Modifier.height(24.dp))
                     AnalysisResultView(uiState.analysisResult)
                 }
@@ -81,23 +80,63 @@ class StatisticsActivity : ComponentActivity() {
     }
 }
 
+// --- KOMPONENTY UI ---
 
-// --- KOMPONENTY UI DLA TEGO EKRANU ---
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterSection(uiState: StatisticsUiState, viewModel: StatisticsViewModel) {
-    // TODO: Dodać przełącznik RadioButton/SegmentedButton dla Czas/Trening
 
-    DropdownFilter(
-        label = "Zakres czasu",
-        options = TimeFilter.values().map { it.displayName },
-        selectedOption = uiState.timeFilter.displayName,
-        onOptionSelected = { selectedName ->
-            TimeFilter.values().find { it.displayName == selectedName }?.let {
-                viewModel.onTimeFilterChanged(it)
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        FilterMode.values().forEachIndexed { index, mode ->
+            SegmentedButton(
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = FilterMode.values().size),
+                onClick = { viewModel.onFilterModeChanged(mode) },
+                selected = uiState.filterMode == mode
+            ) {
+                Text(mode.displayName)
             }
         }
-    )
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    if (uiState.isTimeFilterActive) {
+        DropdownFilter(
+            label = "Zakres czasu",
+            options = TimeFilter.values().map { it.displayName },
+            selectedOption = uiState.timeFilter.displayName,
+            onOptionSelected = { selectedName ->
+                TimeFilter.values().find { it.displayName == selectedName }?.let {
+                    viewModel.onTimeFilterChanged(it)
+                }
+            }
+        )
+    } else {
+        val trainingOptions = uiState.availableTrainings.map {
+            val date = it.createdAt?.toDate()?.let { d ->
+                SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(d)
+            } ?: "Brak daty"
+            "${it.location.ifBlank { "Trening" }} - $date"
+        }
+        val selectedTrainingName = uiState.trainingFilter?.let {
+            val date = it.createdAt?.toDate()?.let { d ->
+                SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(d)
+            } ?: "Brak daty"
+            "${it.location.ifBlank { "Trening" }} - $date"
+        } ?: "Wybierz trening"
+
+        DropdownFilter(
+            label = "Wybierz trening",
+            options = trainingOptions,
+            selectedOption = selectedTrainingName,
+            onOptionSelected = { selectedName ->
+                val index = trainingOptions.indexOf(selectedName)
+                if (index != -1) {
+                    viewModel.onTrainingFilterChanged(uiState.availableTrainings[index])
+                }
+            }
+        )
+    }
 
     DropdownFilter(
         label = "Broń",
@@ -135,9 +174,7 @@ fun DropdownFilter(
             label = { Text(label) },
             readOnly = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth()
+            modifier = Modifier.menuAnchor().fillMaxWidth()
         )
         ExposedDropdownMenu(
             expanded = expanded,
@@ -175,72 +212,69 @@ fun AnalysisTypeSelector(selectedType: AnalysisType, onTypeSelected: (AnalysisTy
 
 @Composable
 fun AnalysisResultView(result: AnalysisResult?) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .padding(top = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Image(
-            painter = painterResource(id = R.drawable.target_background),
-            contentDescription = "Tło tarczy",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.target_background),
+                contentDescription = "Tło tarczy",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
 
-        when (result) {
-            is AnalysisResult.Heatmap -> {
-                Image(
-                    bitmap = result.bitmap.asImageBitmap(),
-                    contentDescription = "Heatmapa strzałów",
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            is AnalysisResult.Grouping -> {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val canvasSizeInPx = min(size.width, size.height)
-                    // Przelicznik ze współrzędnych względnych na piksele
-                    val pixelsPerUnit = canvasSizeInPx / 2.0f / 3.0f
-
-                    // Oblicz średni promień w pikselach
-                    val radiusInPx = result.result.averageRadius * pixelsPerUnit
-
-                    // Narysuj różowy okrąg skupienia
-                    drawCircle(
-                        color = Color.Magenta,
-                        radius = radiusInPx,
-                        center = center, // Środek Canvas
-                        style = Stroke(width = 8f) // Gruba obręcz
+            when (result) {
+                is AnalysisResult.Heatmap -> {
+                    Image(
+                        bitmap = result.bitmap.asImageBitmap(),
+                        contentDescription = "Heatmapa strzałów",
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
+                is AnalysisResult.Grouping -> {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val canvasSizeInPx = min(size.width, size.height)
+                        val pixelsPerUnit = canvasSizeInPx / 2.0f / 3.0f
+                        val radiusInPx = result.result.averageRadius * pixelsPerUnit
+
+                        drawCircle(
+                            color = Color.Magenta,
+                            radius = radiusInPx,
+                            center = center,
+                            style = Stroke(width = 8f)
+                        )
+                    }
+                }
+                null -> {
+                    Text("Wybierz filtry i wygeneruj analizę", color = Color.White)
+                }
             }
-            null -> {
-                Text("Wybierz filtry i wygeneruj analizę", color = Color.White)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        when (result) {
+            is AnalysisResult.Grouping -> {
+                Text(
+                    text = "Średnie skupienie: ${"%.2f".format(result.result.averageRadius)} pkt*",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "* Obliczono na podstawie ${result.result.seriesCount} serii.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
-        }
-    }
-    Spacer(modifier = Modifier.height(16.dp))
-    when (result) {
-        is AnalysisResult.Grouping -> {
-            Text(
-                text = "Średnie skupienie: ${"%.2f".format(result.result.averageRadius)} pkt*",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "* Obliczono na podstawie ${result.result.seriesCount} serii.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        is AnalysisResult.Heatmap -> {
-            Text(
-                text = "Heatmapa pokazuje gęstość trafień.",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center
-            )
-        }
-        else -> {
-            // Nie pokazuj nic, jeśli nie ma wyniku
+            is AnalysisResult.Heatmap -> {
+                Text(
+                    text = "Heatmapa pokazuje gęstość trafień.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+            else -> {
+                // Nie pokazuj nic, jeśli nie ma wyniku
+            }
         }
     }
 }
